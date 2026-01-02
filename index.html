@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>导航</title>
+  <!-- 引入外部CSS样式文件 -->
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+</head>
+<body>
+  <!-- 导航页核心结构 -->
+  <div class="container">
+    <div class="top-section">
+      <div class="search-bar">
+        <button id="googleButton" class="google-button">Go</button>
+        <input type="text" id="searchInput" placeholder="请输入搜索内容" autocomplete="off">
+        <button id="baidusearchButton" class="baidu-button">搜索</button>
+      </div>
+    </div>
+    <div class="bottom-section">
+      <div id="icon-container"></div>
+    </div>
+  </div>
+
+  <!-- 新增/编辑图标弹窗 -->
+  <div class="modal" id="iconModal">
+    <div class="modal-content">
+      <h3 id="modalTitle" class="modal-title">添加上栏图标</h3>
+      <label>网站地址（URL）：<span style="color:red;">*</span></label>
+      <input type="text" id="urlInput" placeholder="输入网站地址，自动补http/https前缀">
+      <label>网站名称：<span style="color:red;">*</span></label>
+      <input type="text" id="nameInput" placeholder="输入网站名称（如：百度）">
+      <label>图标背景色：<span style="color:red;">*</span></label>
+      <div class="color-select-wrap">
+        <div class="color-presets" id="colorPresets"></div>
+        <input type="color" id="colorPicker" class="color-picker" value="#4cafef">
+      </div>
+      <label>图标所在类别：<span style="color:red;">*</span></label>
+      <div class="category-select-wrap">
+        <div class="category-presets" id="categoryPresets"></div>
+      </div>
+      <label>图标替代文字（alt）：</label>
+      <input type="text" id="altInput" placeholder="输入图标说明文字">
+      <label>图标地址：</label>
+      <input type="text" id="iconInput" placeholder="可输入图标的网址URL" value="">
+      <div class="path-tip">支持直接输入完整的图标URL地址，用于预览效果</div>
+
+      <label>或拖拽上传图标文件：</label>
+      <div class="drag-upload-area" id="dragUploadArea">
+        <div id="uploadPreview" class="upload-preview">
+          <!-- 预览容器：水平排布两个预览 -->
+          <div class="preview-container" style="display: flex; align-items: center; justify-content: center; gap: 20px;">
+            <!-- 左侧预览：背景颜色加文字的预览（正常图片回落的样子） -->
+            <div class="upload-preview-item" id="textPreviewItem">
+              <div class="preview-label">文字预览：</div>
+              <div class="upload-preview-icon-container">
+                <div class="icon upload-preview-icon" id="textPreviewIcon" style="margin: 0;">
+                  <span id="textPreview" style="color: white; font-size: 14px; font-weight: bold;"></span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 右侧预览：图片加背景颜色的形式，可上传 -->
+            <div class="upload-preview-item" id="imagePreviewItem">
+              <div class="preview-label">图片预览：</div>
+              <div class="upload-preview-icon-container" id="imagePreviewContainer" style="cursor: pointer;">
+                <div class="icon upload-preview-icon" id="previewIcon" style="margin: 0;">
+                  <!-- 初始状态显示占位样式 -->
+                  <div id="imagePreviewPlaceholder" class="upload-icon-placeholder">
+                    <span>+</span>
+                  </div>
+                  <img id="previewImg" src="" alt="预览" style="display: none;">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <input type="file" id="fileUploadInput" accept="image/*,.ico" style="display: none;">
+      </div>
+
+      <div class="modal-buttons">
+        <button class="btn-close" onclick="closeModal()">关闭</button>
+        <button class="btn-save" id="modalSubmitBtn" onclick="submitIcon()">保存（即时生效）</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 删除确认弹窗 -->
+  <div class="modal" id="deleteModal">
+    <div class="modal-content" style="max-width: 300px; text-align: center;">
+      <h3 class="modal-title">确认删除该图标吗？</h3>
+      <p>删除后无法恢复哦～</p>
+      <div class="modal-buttons">
+        <button class="btn-close" onclick="closeModal()">取消</button>
+        <button class="btn-delete" id="confirmDelBtn">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提示框 + 导入文件隐藏输入框 -->
+  <div class="toast" id="toast"></div>
+  <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileImport(event)">
+  
+  
+  
+  <!-- 自定义密码输入模态框 -->
+  <div id="passwordModal" class="password-modal">
+    <div class="password-modal-content">
+      <h3>请输入上传密码</h3>
+      <input type="password" id="passwordInput" placeholder="请输入密码" class="password-input">
+      <div class="password-modal-buttons">
+        <button id="passwordSubmit" class="password-button submit">确定</button>
+        <button id="passwordCancel" class="password-button cancel">取消</button>
+      </div>
+    </div>
+  </div>
+  
+
+  <!-- 引入外部JS逻辑文件 + Sortable拖拽插件 -->
+  <script src="Sortable.min.js"></script>
+  <script src="app-bundle.js"></script>
+</body>
+</html>
