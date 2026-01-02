@@ -245,26 +245,110 @@ async function setIconsToStorage(data) {
 
 
 
+// 从本地JSON文件加载临时数据
+async function loadLocalJsonData() {
+  try {
+    console.log('🟡 尝试从本地JSON文件加载临时数据...');
+    const response = await fetch('./nav_data.json');
+    if (response.ok) {
+      const jsonData = await response.json();
+      if (jsonData && jsonData.navList && jsonData.navList.length > 0) {
+        console.log('✅ 从本地JSON文件加载临时数据成功，共', jsonData.navList.length, '个图标');
+        // 设置临时数据标志
+        isUsingTempData = true;
+        // 直接渲染临时数据，不保存到localStorage
+        await initIconsWithTempData(jsonData);
+        return jsonData;
+      }
+    }
+  } catch (error) {
+    console.error('❌ 从本地JSON文件加载临时数据失败:', error);
+  }
+  return null;
+}
+
+// 使用临时数据初始化图标
+async function initIconsWithTempData(tempData) {
+  const navList = tempData.navList || [];
+  
+  // 找出所有不同的k值，并排序
+  const uniqueKValues = [...new Set(navList.map(icon => icon.k))].sort((a, b) => a - b);
+  
+  // 确保至少有一个列
+  if (uniqueKValues.length === 0) {
+    uniqueKValues.push(1);
+  }
+  
+  // 清空容器
+  container.innerHTML = '';
+  
+  // 为每个k值创建一个列
+  uniqueKValues.forEach(k => {
+    // 创建列元素
+    const column = document.createElement('div');
+    column.className = 'category-column';
+    
+    // 创建图标容器
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'icon-wrap';
+    iconWrap.dataset.category = k;
+    
+    // 过滤该类别的图标
+    const icons = navList.filter(icon => icon.k === k);
+    
+    // 渲染图标
+    renderIcons(iconWrap, icons, k);
+    
+    // 将图标容器添加到列中
+    column.appendChild(iconWrap);
+    
+    // 将列添加到容器中
+    container.appendChild(column);
+  });
+  
+  // 初始化拖拽功能
+  initCrossColumnSortable();
+}
+
 // 加载Base64数据（如果不存在）
 async function loadBase64DataIfNeeded() {
   console.log('开始加载数据...');
   
   // 检查localStorage中是否已有数据
-  const localData = getLocalStorageData();
+  let localData = getLocalStorageData();
   if (localData.navList.length > 0) {
     console.log('✅ 从本地存储加载数据成功，共', localData.navList.length, '个图标');
     return true;
   }
   
-  // 检查API返回的数据是否为空
-  const apiData = await getIconsFromStorage();
-  if (apiData.navList.length > 0) {
-    console.log('✅ 从云端KV加载数据成功，共', apiData.navList.length, '个图标');
-    return true;
+  // 本地存储没有数据，先从本地JSON文件加载临时数据
+  const tempData = await loadLocalJsonData();
+  
+  // 然后异步从云端获取数据
+  try {
+    const apiData = await getIconsFromStorage();
+    if (apiData.navList.length > 0) {
+      console.log('✅ 从云端KV加载数据成功，共', apiData.navList.length, '个图标');
+      // 更新本地存储
+      setIconsToStorage(apiData);
+      // 重新渲染图标，使用最新的云端数据
+      await initIcons();
+      // 显示数据同步提示
+      showToast('✅ 数据已从云端同步！', 'success');
+      return true;
+    }
+  } catch (error) {
+    console.error('❌ 从云端KV加载数据失败:', error);
+    // 如果云端数据获取失败，继续使用临时数据
+    if (tempData) {
+      console.log('🟡 云端数据获取失败，继续使用本地JSON文件的临时数据');
+    }
   }
   
-  // 不再自动加载本地文件，确保数据来源清晰可辨
-  console.log('❌ 本地存储和云端KV都没有数据，不再自动加载本地文件');
+  // 如果本地JSON文件也没有数据
+  if (!tempData) {
+    console.log('❌ 本地存储、云端KV和本地JSON文件都没有数据');
+  }
   return true;
 }
 
@@ -409,6 +493,8 @@ let touchStartTime = 0;
 let isTouchDragReady = false;
 // 拖拽延迟时间（毫秒）
 const DRAG_DELAY = 200;
+// 是否使用临时数据标志
+let isUsingTempData = false;
 
 // 页面DOM元素初始化
 let container;
@@ -485,114 +571,123 @@ function renderIcons(iconWrap, iconsData, columnKey) {
       }
     };
 
-    // 统一处理开始事件（鼠标+触摸）
-    function handleStart(e) {
-      // 右键或多点触摸不触发
-      if (e.button === 2 || (e.type === 'touchstart' && e.touches.length > 1)) return;
+    // 如果是临时数据，只保留跳转功能，禁用其他功能
+    if (!isUsingTempData) {
+      // 统一处理开始事件（鼠标+触摸）
+      function handleStart(e) {
+        // 右键或多点触摸不触发
+        if (e.button === 2 || (e.type === 'touchstart' && e.touches.length > 1)) return;
 
-      currentDraggedElement = iconItem;
-      iconDiv.classList.add('waiting');
+        currentDraggedElement = iconItem;
+        iconDiv.classList.add('waiting');
 
-      touchStartTime = e.timeStamp;
-      isTouchDragReady = false;
+        touchStartTime = e.timeStamp;
+        isTouchDragReady = false;
 
-      dragTimer = setTimeout(() => {
-        isDraggingEnabled = true;
-        isTouchDragReady = true; // 移动端标记已准备好拖拽
-        iconItem.style.cursor = 'grabbing';
-        iconItem.classList.add('shaking');
-        showToast('可以拖拽了', 'info');
-      }, DRAG_DELAY);
-    }
-
-    // 绑定事件：桌面端mousedown + 移动端touchstart
-    iconDiv.addEventListener('mousedown', handleStart);
-    iconDiv.addEventListener('touchstart', handleStart);
-
-    // 触摸移动事件（移动端）
-    iconDiv.addEventListener('touchmove', (e) => {
-      if (isTouchDragReady) {
-        e.preventDefault(); // 仅拖拽时阻止滚动，不影响点击
-      }
-    });
-
-    // 结束事件（鼠标+触摸）：区分点击和拖拽
-    function handleEnd(e) {
-      clearTimeout(dragTimer);
-      if (currentDraggedElement) {
-        currentDraggedElement.querySelector('.icon').classList.remove('waiting');
-        currentDraggedElement.style.cursor = 'grab';
-        currentDraggedElement.classList.remove('shaking');
+        dragTimer = setTimeout(() => {
+          isDraggingEnabled = true;
+          isTouchDragReady = true; // 移动端标记已准备好拖拽
+          iconItem.style.cursor = 'grabbing';
+          iconItem.classList.add('shaking');
+          showToast('可以拖拽了', 'info');
+        }, DRAG_DELAY);
       }
 
-      // 关键：判断是点击（短按）还是拖拽（长按）
-      const touchDuration = e.timeStamp - touchStartTime;
-      if (touchDuration < DRAG_DELAY && !isDraggingEnabled && e.type === 'touchend') {
-        // 移动端短按：执行跳转
-        if (item.url && item.url.trim().startsWith('http')) {
-          window.open(item.url, '_self');
-        } else {
-          showToast('图标URL无效！', 'error');
+      // 绑定事件：桌面端mousedown + 移动端touchstart
+      iconDiv.addEventListener('mousedown', handleStart);
+      iconDiv.addEventListener('touchstart', handleStart);
+
+      // 触摸移动事件（移动端）
+      iconDiv.addEventListener('touchmove', (e) => {
+        if (isTouchDragReady) {
+          e.preventDefault(); // 仅拖拽时阻止滚动，不影响点击
         }
-      }
+      });
 
-      // 重置所有状态
-      isDraggingEnabled = false;
-      isTouchDragReady = false;
-      currentDraggedElement = null;
-      touchStartTime = 0;
-    }
-
-    // 绑定结束事件
-    document.addEventListener('mouseup', handleEnd);
-    document.addEventListener('touchend', handleEnd);
-    document.addEventListener('touchcancel', handleEnd); // 意外中断（如来电）
-
-    // 鼠标移出重置
-    iconItem.addEventListener('mouseleave', () => {
-      if (!isDraggingEnabled) {
+      // 结束事件（鼠标+触摸）：区分点击和拖拽
+      function handleEnd(e) {
         clearTimeout(dragTimer);
         if (currentDraggedElement) {
           currentDraggedElement.querySelector('.icon').classList.remove('waiting');
+          currentDraggedElement.style.cursor = 'grab';
           currentDraggedElement.classList.remove('shaking');
         }
-      }
-    });
 
-    // 右键菜单部分
-    const rightMenu = createRightClickMenu(columnKey, idx, item);
-    iconItem.appendChild(rightMenu);
-    iconItem.oncontextmenu = (e) => {
-      // 阻止浏览器默认右键菜单
-      e.preventDefault();
-      
-      // 隐藏所有已显示的右键菜单
-      document.querySelectorAll('.right-click-menu').forEach(menu => menu.classList.remove('show'));
-      
-      // 显示当前图标的右键菜单
-      rightMenu.classList.add('show');
-      
-      // 设置菜单位置（移除向上偏移的20px）
-      const menuWidth = rightMenu.offsetWidth;
-      const menuHeight = rightMenu.offsetHeight;
-      const screenWidth = window.innerWidth;
-      const screenHeight = window.innerHeight;
-      let leftPos = e.clientX;
-      let topPos = e.clientY; // 移除向上偏移
-      if (leftPos + menuWidth > screenWidth) leftPos = screenWidth - menuWidth;
-      if (topPos + menuHeight > screenHeight) topPos = screenHeight - menuHeight;
-      if (topPos < 0) topPos = 0;
-      if (leftPos < 0) leftPos = 0;
-      rightMenu.style.left = `${leftPos}px`;
-      rightMenu.style.top = `${topPos}px`;
-      
-      // 点击页面其他地方时隐藏当前菜单
-      document.addEventListener('click', (event) => {
-        if (!event.target.closest('.right-click-menu') && !event.target.closest('.icon-item')) {
-          rightMenu.classList.remove('show');
+        // 关键：判断是点击（短按）还是拖拽（长按）
+        const touchDuration = e.timeStamp - touchStartTime;
+        if (touchDuration < DRAG_DELAY && !isDraggingEnabled && e.type === 'touchend') {
+          // 移动端短按：执行跳转
+          if (item.url && item.url.trim().startsWith('http')) {
+            window.open(item.url, '_self');
+          } else {
+            showToast('图标URL无效！', 'error');
+          }
+        }
+
+        // 重置所有状态
+        isDraggingEnabled = false;
+        isTouchDragReady = false;
+        currentDraggedElement = null;
+        touchStartTime = 0;
+      }
+
+      // 绑定结束事件
+      document.addEventListener('mouseup', handleEnd);
+      document.addEventListener('touchend', handleEnd);
+      document.addEventListener('touchcancel', handleEnd); // 意外中断（如来电）
+
+      // 鼠标移出重置
+      iconItem.addEventListener('mouseleave', () => {
+        if (!isDraggingEnabled) {
+          clearTimeout(dragTimer);
+          if (currentDraggedElement) {
+            currentDraggedElement.querySelector('.icon').classList.remove('waiting');
+            currentDraggedElement.classList.remove('shaking');
+          }
         }
       });
-    };
+
+      // 右键菜单部分
+      const rightMenu = createRightClickMenu(columnKey, idx, item);
+      iconItem.appendChild(rightMenu);
+      iconItem.oncontextmenu = (e) => {
+        // 阻止浏览器默认右键菜单
+        e.preventDefault();
+        
+        // 隐藏所有已显示的右键菜单
+        document.querySelectorAll('.right-click-menu').forEach(menu => menu.classList.remove('show'));
+        
+        // 显示当前图标的右键菜单
+        rightMenu.classList.add('show');
+        
+        // 设置菜单位置（移除向上偏移的20px）
+        const menuWidth = rightMenu.offsetWidth;
+        const menuHeight = rightMenu.offsetHeight;
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+        let leftPos = e.clientX;
+        let topPos = e.clientY; // 移除向上偏移
+        if (leftPos + menuWidth > screenWidth) leftPos = screenWidth - menuWidth;
+        if (topPos + menuHeight > screenHeight) topPos = screenHeight - menuHeight;
+        if (topPos < 0) topPos = 0;
+        if (leftPos < 0) leftPos = 0;
+        rightMenu.style.left = `${leftPos}px`;
+        rightMenu.style.top = `${topPos}px`;
+        
+        // 点击页面其他地方时隐藏当前菜单
+        document.addEventListener('click', (event) => {
+          if (!event.target.closest('.right-click-menu') && !event.target.closest('.icon-item')) {
+            rightMenu.classList.remove('show');
+          }
+        });
+      };
+    } else {
+      // 临时数据，禁用右键菜单
+      iconItem.oncontextmenu = (e) => {
+        // 阻止浏览器默认右键菜单
+        e.preventDefault();
+      };
+    }
 
     iconItem.appendChild(iconDiv);
     iconItem.appendChild(iconName);
@@ -843,6 +938,9 @@ async function initIcons() {
 
   // 清空容器
   container.innerHTML = '';
+  
+  // 设置非临时数据标志
+  isUsingTempData = false;
 
   // 为每个k值创建一个列
   uniqueKValues.forEach(k => {
@@ -877,6 +975,9 @@ async function initIcons() {
 
 // 初始化跨列拖拽排序
 function initCrossColumnSortable() {
+  // 如果是临时数据，不初始化拖拽功能
+  if (isUsingTempData) return;
+  
   const sortableConfig = {
     group: 'nav-icons-group',
     animation: 150,
@@ -1578,6 +1679,13 @@ function initDomEvents() {
   // 在底部整个图标显示区域添加右键菜单事件处理
   if (bottomSection) {
     bottomSection.addEventListener('contextmenu', (e) => {
+      // 如果是临时数据，不显示右键菜单
+      if (isUsingTempData) {
+        // 阻止浏览器默认右键菜单
+        e.preventDefault();
+        return;
+      }
+      
       // 检查点击目标是否在图标内部，如果是则不显示容器菜单（让图标自己的右键菜单显示）
       if (e.target.closest('.icon-item')) return;
       
@@ -2074,23 +2182,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     // 初始化页面结构（必须先于DOM事件绑定）
     initPageStructure();
     
-    // 初始化DOM事件
-    initDomEvents();
-    
-    // 初始化颜色预设
-    initColorPresets();
-    
-    // 添加清除缓存按钮事件
-    // 先加载Base64数据
-    await loadBase64DataIfNeeded();
-    
-    // 然后初始化图标
-    await initIcons();
-    
-    // 初始化拖拽上传功能
-    initDragUpload();
-    
-    // 初始化搜索功能
+    // 初始化搜索功能（提前初始化，确保无论是否使用临时数据都能正常工作）
     const baiduButton = document.getElementById('baidusearchButton');
     const googleButton = document.getElementById('googleButton');
     const searchInput = document.getElementById('searchInput');
@@ -2114,6 +2206,26 @@ window.addEventListener('DOMContentLoaded', async () => {
     } else {
       console.warn('搜索相关元素未找到，搜索功能初始化失败');
     }
+    
+    // 初始化DOM事件
+    initDomEvents();
+    
+    // 初始化颜色预设
+    initColorPresets();
+    
+    // 添加清除缓存按钮事件
+    // 先加载Base64数据
+    await loadBase64DataIfNeeded();
+    
+    // 只有当没有使用临时数据时，才调用initIcons()
+    // 这样可以保留临时数据，同时确保搜索功能正常工作
+    if (!isUsingTempData) {
+      // 然后初始化图标
+      await initIcons();
+    }
+    
+    // 初始化拖拽上传功能
+    initDragUpload();
     
     console.log('完整初始化流程完成');
   } catch (error) {
